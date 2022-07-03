@@ -1,0 +1,7 @@
+USE SMSen;
+
+SELECT sms1.auto_id AS d1, sms2.auto_id AS d2, jedi(sms1, sms2) AS dist
+    FROM SMSen sms1, SMSen sms2
+    --WHERE sms1.`@id` = 10120 AND jedi(sms1, sms2) <= {threshold} AND sms1.auto_id != sms2.auto_id
+    WHERE jedi(sms1, sms2) <= {threshold} AND sms1.auto_id != sms2.auto_id
+    ORDER BY d1, d2;

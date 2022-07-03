@@ -1,0 +1,10 @@
+{
+    "relative_path": "../../datasets/smsen/smsen.json",
+    "thresholds": [
+        7,
+        12,
+        17,
+        22,
+        27
+    ]
+}

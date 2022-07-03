@@ -1,0 +1,18 @@
+{
+    "_comment": "If a specific dataset should not be benchmarked, set the value of its 'enabled' field to false.",
+    "datasets": [
+        {
+            "dataset": "smsen",
+            "enabled": true,
+            "config": {
+                "thresholds": [
+                        7,
+                        12,
+                        17,
+                        22,
+                        27
+                ]
+            }
+        }
+    ]
+}
