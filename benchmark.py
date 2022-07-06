@@ -68,7 +68,7 @@ def get_current_time_iso(separators = True):
         return datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%fZ")
 
 def benchmark_dataset(dataset, config, url = "http://localhost:19002/query/service"):
-    class query_type(enum.Enum):
+    class QueryType(enum.Enum):
         PREPARATION = "preparation"
         BENCHMARK = "benchmark"
         CLEANUP = "cleanup"
@@ -85,9 +85,13 @@ def benchmark_dataset(dataset, config, url = "http://localhost:19002/query/servi
 
         return DEFAULT_QUERY_TIMEOUT
 
+    def get_query(query_type):
+        filename = "data/statements/" + dataset + "/" + str([q for q in QueryType].index(query_type) + 1) + "." + query_type.value + ".sqlpp"
+        return read_file_content(filename)
+
     def print_query_run(query_type, threshold = None):
         output = "[{timestamp}] running {query_type} query of dataset {dataset}".format(timestamp = get_current_time_iso(), query_type = query_type.value, dataset = dataset)
-        if (query_type == query_type.BENCHMARK):
+        if (query_type == QueryType.BENCHMARK):
             output = output + " with threshold " + str(threshold)
         output = output + "... "
         print(output, end = "", flush = True)
@@ -105,9 +109,9 @@ def benchmark_dataset(dataset, config, url = "http://localhost:19002/query/servi
 
     results = {}
 
-    prepare_query = read_file_content("data/statements/" + dataset + "/1.prepare.sqlpp").format(host = "localhost", path = os.path.abspath("data/datasets/" + dataset + "/" + dataset + ".json"))
-    print_query_run(query_type.PREPARATION)
-    res = run_query(prepare_query, url)
+    preparation_query = get_query(QueryType.PREPARATION).format(host = "localhost", path = os.path.abspath("data/datasets/" + dataset + "/" + dataset + ".json"))
+    print_query_run(QueryType.PREPARATION)
+    res = run_query(preparation_query, url)
     res_json = res.json()
     if query_was_successful(res_json):
         print_success(res_json)
@@ -116,10 +120,10 @@ def benchmark_dataset(dataset, config, url = "http://localhost:19002/query/servi
         # TODO: "handle" this (exception?)
     #print(json.dumps(res_json, indent = 4, ensure_ascii = False))
 
-    benchmark_query_unformatted = read_file_content("data/statements/" + dataset + "/2.query.sqlpp")
+    benchmark_query_unformatted = get_query(QueryType.BENCHMARK)
     for threshold in config["thresholds"]:
         benchmark_query_formatted = benchmark_query_unformatted.format(threshold = threshold)
-        print_query_run(query_type.BENCHMARK, threshold)
+        print_query_run(QueryType.BENCHMARK, threshold)
         res = run_query(benchmark_query_formatted, url)
         res_json = res.json()
         if query_was_successful(res_json):
@@ -129,8 +133,8 @@ def benchmark_dataset(dataset, config, url = "http://localhost:19002/query/servi
             print_failure(res_json)
         #print(json.dumps(res_json, indent = 4, ensure_ascii = False))
 
-    cleanup_query = read_file_content("data/statements/" + dataset + "/3.cleanup.sqlpp")
-    print_query_run(query_type.CLEANUP)
+    cleanup_query = get_query(QueryType.CLEANUP)
+    print_query_run(QueryType.CLEANUP)
     res = run_query(cleanup_query, url)
     res_json = res.json()
     if query_was_successful(res_json):
