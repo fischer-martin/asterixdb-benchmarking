@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
 import requests
-import urllib.parse
 import json
 import re
 import os
+import sys
+import enum
+import datetime
 
 
 
@@ -31,12 +33,21 @@ def parse_time_string(time_string):
     return int(re.sub(r"\.", "", time_string_without_unit) + ("0" * fract_dig_diff))
 
 def retrieve_execution_time_from_json(json_data):
-    return parse_time_string(json_data["metrics"]["executionTime"])
+    return json_data["metrics"]["executionTime"]
+
+def retrieve_execution_time_from_json_in_ns(json_data):
+    return parse_time_string(retrieve_execution_time_from_json(json_data))
+
+def retrieve_query_status(json_data):
+    return json_data["status"]
 
 def query_was_successful(json_data):
-    return json_data["status"] == "success"
+    return retrieve_query_status(json_data) == "success"
 
-def run_query(query, url = "http://localhost:19002/query/service", parameters = {}):
+def run_query(query, url = "http://localhost:19002/query/service", parameters = {}, timeout = (9.2, sys.maxsize)):
+    # timeout for the HTTP requests (in seconds); first value is for connecting, second value is for response
+    # (see https://requests.readthedocs.io/en/latest/user/advanced/#timeouts)
+    #return requests.post(url, dict(**{"statement": query}, **parameters), timeout = timeout)
     return requests.post(url, dict(**{"statement": query}, **parameters))
 
 def read_file_content(filename, is_json = False):
@@ -48,24 +59,85 @@ def read_file_content(filename, is_json = False):
 
     return file_content
 
+def get_current_time_iso(separators = True):
+    if separators:
+        # https://stackoverflow.com/a/28147286
+        return datetime.datetime.now().replace(microsecond = 0).isoformat()
+    else:
+        # ISO8601 time format string: https://stackoverflow.com/a/52187229
+        return datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%fZ")
+
 def benchmark_dataset(dataset, config, url = "http://localhost:19002/query/service"):
+    class query_type(enum.Enum):
+        PREPARATION = "preparation"
+        BENCHMARK = "benchmark"
+        CLEANUP = "cleanup"
+    # TODO: There is this undocumented "timeout" parameter (see QueryServiceRequestParameters) which takes a value
+    # in the format nx (n = number, x = time unit; e.g. 200s) that is always converted into ms (i.e. 1400us is
+    # converted into 1ms) and is applied in NCQueryServiceServlet but not in QueryServiceServlet, both of which
+    # are used by the NCs (NCApplication) and the CCs (CCApplication) respectively when answering queries.
+    def get_timeout_string(config, query_type):
+        DEFAULT_QUERY_TIMEOUT = str(60 * 1000) + "ms"
+
+        if "timeouts" in config.keys():
+            if query_type.value in config["timeouts"].keys():
+                return config["timeouts"][query_type.value]
+
+        return DEFAULT_QUERY_TIMEOUT
+
+    def print_query_run(query_type, threshold = None):
+        output = "[{timestamp}] running {query_type} query of dataset {dataset}".format(timestamp = get_current_time_iso(), query_type = query_type.value, dataset = dataset)
+        if (query_type == query_type.BENCHMARK):
+            output = output + " with threshold " + str(threshold)
+        output = output + "... "
+        print(output, end = "", flush = True)
+
+    def print_success(json_data):
+        print("done [{time}]".format(time = retrieve_execution_time_from_json(json_data)))
+
+    def print_failure(json_data):
+        print("failed (status: {query_status}) [{time}]".format(query_status = retrieve_query_status(res_json), time = retrieve_execution_time_from_json(res_json)))
+        if "errors" in json_data.keys():
+            errors = json_data["errors"]
+            for err in errors:
+                print("    error code:    {error_code}".format(error_code = err["code"]))
+                print("    error message: {error_msg}".format(error_msg = err["msg"]))
+
     results = {}
 
     prepare_query = read_file_content("data/statements/" + dataset + "/1.prepare.sqlpp").format(host = "localhost", path = os.path.abspath("data/datasets/" + dataset + "/" + dataset + ".json"))
-    # TODO: check if query was successfully executed
-    run_query(prepare_query, url)
+    print_query_run(query_type.PREPARATION)
+    res = run_query(prepare_query, url)
+    res_json = res.json()
+    if query_was_successful(res_json):
+        print_success(res_json)
+    else:
+        print_failure(res_json)
+        # TODO: "handle" this (exception?)
+    #print(json.dumps(res_json, indent = 4, ensure_ascii = False))
 
     benchmark_query_unformatted = read_file_content("data/statements/" + dataset + "/2.query.sqlpp")
     for threshold in config["thresholds"]:
         benchmark_query_formatted = benchmark_query_unformatted.format(threshold = threshold)
-        # TODO: check if query was successfully executed
+        print_query_run(query_type.BENCHMARK, threshold)
         res = run_query(benchmark_query_formatted, url)
-        results = dict(**results, **{str(threshold): retrieve_execution_time_from_json(res.json())})
-        print(json.dumps(res.json(), indent=4, ensure_ascii=False))
+        res_json = res.json()
+        if query_was_successful(res_json):
+            print_success(res_json)
+            results = dict(**results, **{str(threshold): retrieve_execution_time_from_json_in_ns(res_json)})
+        else:
+            print_failure(res_json)
+        #print(json.dumps(res_json, indent = 4, ensure_ascii = False))
 
-    # TODO: check if query was successfully executed
     cleanup_query = read_file_content("data/statements/" + dataset + "/3.cleanup.sqlpp")
-    run_query(cleanup_query, url)
+    print_query_run(query_type.CLEANUP)
+    res = run_query(cleanup_query, url)
+    res_json = res.json()
+    if query_was_successful(res_json):
+        print_success(res_json)
+    else:
+        # don't need to handle this since it's not really critical
+        print_failure(res_json)
 
     return results
 
@@ -73,4 +145,12 @@ config = read_file_content("config.json", True)
 
 for ds in config["datasets"]:
     if ds["enabled"]:
-        print(benchmark_dataset(ds["dataset"], ds["config"]))
+        dataset_name = ds["dataset"]
+
+        results = benchmark_dataset(dataset_name, ds["config"])
+
+        results_filename = "data/runtimes/" + dataset_name + "/" + get_current_time_iso(False) + ".txt"
+        os.makedirs(os.path.dirname(results_filename), exist_ok = True)
+        with open(results_filename, "w") as results_file:
+            for key, value in results.items():
+                results_file.write(str(key) + " " + str(value) + "\n")
