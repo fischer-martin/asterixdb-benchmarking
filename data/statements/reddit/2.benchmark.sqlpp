@@ -1,0 +1,6 @@
+USE Reddit;
+
+SELECT thread1.auto_id AS d1, thread2.auto_id AS d2, jedi(thread1, thread2) AS dist
+    FROM Reddit thread1, Reddit thread2
+    WHERE jedi(thread1, thread2) <= {threshold} AND thread1.auto_id != thread2.auto_id
+    ORDER BY d1, d2;

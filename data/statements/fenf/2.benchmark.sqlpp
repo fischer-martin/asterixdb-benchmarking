@@ -1,0 +1,6 @@
+USE FENF;
+
+SELECT fenf1.auto_id AS d1, fenf2.auto_id AS d2, jedi(fenf1, fenf2) AS dist
+    FROM FENF fenf1, FENF fenf2
+    WHERE jedi(fenf1, fenf2) <= {threshold} AND fenf1.auto_id != fenf2.auto_id
+    ORDER BY d1, d2;

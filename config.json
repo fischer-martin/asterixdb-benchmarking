@@ -3,14 +3,37 @@
     "datasets": [
         {
             "dataset": "smsen",
-            "enabled": true,
+            "enabled": false,
             "config": {
                 "thresholds": [
                         7,
-                        12,
                         17,
                         22,
                         27
+                ]
+            }
+        },
+        {
+            "dataset": "reddit",
+            "enabled": true,
+            "config": {
+                "thresholds": [
+                    15,
+                    25,
+                    55,
+                    80
+                ]
+            }
+        },
+        {
+            "dataset": "fenf",
+            "enabled": false,
+            "config": {
+                "thresholds": [
+                    4,
+                    7,
+                    12,
+                    18
                 ]
             }
         }
