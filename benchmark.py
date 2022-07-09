@@ -98,7 +98,7 @@ def benchmark_dataset(dataset, config, timeouts, url = "http://localhost:19004/q
         print("done [{time}]".format(time = retrieve_execution_time_from_json(json_data)))
 
     def print_failure(json_data):
-        print("failed (status: {query_status}) [{time}]".format(query_status = retrieve_query_status(res_json), time = retrieve_execution_time_from_json(res_json)))
+        print("failed (status: {query_status}) [{time}]".format(query_status = retrieve_query_status(json_data), time = retrieve_execution_time_from_json(json_data)))
         if "errors" in json_data.keys():
             errors = json_data["errors"]
             for err in errors:
@@ -108,28 +108,26 @@ def benchmark_dataset(dataset, config, timeouts, url = "http://localhost:19004/q
     def print_connection_timeout():
         print("could not connect to server within {conn_timeout}s".format(conn_timeout = http_connection_timeout_sec))
 
-    results = {}
-
-    preparation_query = get_query(QueryType.PREPARATION).format(host = "localhost", path = os.path.abspath("data/datasets/" + dataset + "/" + dataset + ".json"))
-    print_query_run(QueryType.PREPARATION)
-    try:
-        res = run_query(preparation_query, url, {"timeout": timeouts[QueryType.PREPARATION.value]}, http_connection_timeout_sec)
-        res_json = res.json()
-        if query_was_successful(res_json):
-            print_success(res_json)
-        else:
-            print_failure(res_json)
+    def run_preparation_query(timeout):
+        preparation_query = get_query(QueryType.PREPARATION).format(host = "localhost", path = os.path.abspath("data/datasets/" + dataset + "/" + dataset + ".json"))
+        print_query_run(QueryType.PREPARATION)
+        try:
+            res = run_query(preparation_query, url, {"timeout": timeout}, http_connection_timeout_sec)
+            res_json = res.json()
+            if query_was_successful(res_json):
+                print_success(res_json)
+            else:
+                print_failure(res_json)
+                # TODO: "handle" this (exception?)
+        except requests.ConnectTimeout:
+            print_connection_timeout()
             # TODO: "handle" this (exception?)
-    except requests.ConnectTimeout:
-        print_connection_timeout()
-        # TODO: "handle" this (exception?)
 
-    benchmark_query_unformatted = get_query(QueryType.BENCHMARK)
-    for threshold in config["thresholds"]:
-        benchmark_query_formatted = benchmark_query_unformatted.format(threshold = threshold)
+    def run_benchmark_query(unformatted_query, threshold, results, timeout):
+        benchmark_query_formatted = unformatted_query.format(threshold = threshold)
         print_query_run(QueryType.BENCHMARK, threshold)
         try:
-            res = run_query(benchmark_query_formatted, url, {"timeout": timeouts[QueryType.BENCHMARK.value]}, http_connection_timeout_sec)
+            res = run_query(benchmark_query_formatted, url, {"timeout": timeout}, http_connection_timeout_sec)
             res_json = res.json()
             if query_was_successful(res_json):
                 print_success(res_json)
@@ -139,20 +137,29 @@ def benchmark_dataset(dataset, config, timeouts, url = "http://localhost:19004/q
         except requests.ConnectTimeout:
             print_connection_timeout()
 
-        #print(json.dumps(res_json, indent = 4, ensure_ascii = False))
+    def run_cleanup_query(timeout):
+        cleanup_query = get_query(QueryType.CLEANUP)
+        print_query_run(QueryType.CLEANUP)
+        try:
+            res = run_query(cleanup_query, url, {"timeout": timeout}, http_connection_timeout_sec)
+            res_json = res.json()
+            if query_was_successful(res_json):
+                print_success(res_json)
+            else:
+                # don't need to handle this since it's not really critical
+                print_failure(res_json)
+        except requests.ConnectTimeout:
+            print_connection_timeout()
 
-    cleanup_query = get_query(QueryType.CLEANUP)
-    print_query_run(QueryType.CLEANUP)
-    try:
-        res = run_query(cleanup_query, url, {"timeout": timeouts[QueryType.CLEANUP.value]}, http_connection_timeout_sec)
-        res_json = res.json()
-        if query_was_successful(res_json):
-            print_success(res_json)
-        else:
-            # don't need to handle this since it's not really critical
-            print_failure(res_json)
-    except requests.ConnectTimeout:
-        print_connection_timeout()
+    results = {}
+
+    run_preparation_query(timeouts[QueryType.PREPARATION.value])
+
+    benchmark_query_unformatted = get_query(QueryType.BENCHMARK)
+    for threshold in config["thresholds"]:
+        run_benchmark_query(benchmark_query_unformatted, threshold, results, timeouts[QueryType.BENCHMARK.value])
+
+    run_cleanup_query(timeouts[QueryType.CLEANUP.value])
 
     return results
 
