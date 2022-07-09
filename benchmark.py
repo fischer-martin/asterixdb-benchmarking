@@ -4,7 +4,6 @@ import requests
 import json
 import re
 import os
-import sys
 import enum
 import datetime
 
@@ -44,11 +43,12 @@ def retrieve_query_status(json_data):
 def query_was_successful(json_data):
     return retrieve_query_status(json_data) == "success"
 
-def run_query(query, url = "http://localhost:19002/query/service", parameters = {}, timeout = (9.2, sys.maxsize)):
+def run_query(query, url = "http://localhost:19004/query/service", parameters = {}, http_connection_timeout_sec = 9.2):
     # timeout for the HTTP requests (in seconds); first value is for connecting, second value is for response
     # (see https://requests.readthedocs.io/en/latest/user/advanced/#timeouts)
-    #return requests.post(url, dict(**{"statement": query}, **parameters), timeout = timeout)
-    return requests.post(url, dict(**{"statement": query}, **parameters))
+    timeout = (http_connection_timeout_sec, None)
+
+    return requests.post(url, dict(**{"statement": query}, **parameters), timeout = timeout)
 
 def read_file_content(filename, is_json = False):
     with open(filename, "r") as file:
@@ -67,24 +67,22 @@ def get_current_time_iso(separators = True):
         # ISO8601 time format string: https://stackoverflow.com/a/52187229
         return datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%fZ")
 
-def benchmark_dataset(dataset, config, url = "http://localhost:19002/query/service"):
-    class QueryType(enum.Enum):
-        PREPARATION = "preparation"
-        BENCHMARK = "benchmark"
-        CLEANUP = "cleanup"
-    # TODO: There is this undocumented "timeout" parameter (see QueryServiceRequestParameters) which takes a value
-    # in the format nx (n = number, x = time unit; e.g. 200s) that is always converted into ms (i.e. 1400us is
-    # converted into 1ms) and is applied in NCQueryServiceServlet but not in QueryServiceServlet, both of which
-    # are used by the NCs (NCApplication) and the CCs (CCApplication) respectively when answering queries.
-    def get_timeout_string(config, query_type):
-        DEFAULT_QUERY_TIMEOUT = str(60 * 1000) + "ms"
+class QueryType(enum.Enum):
+    PREPARATION = "preparation"
+    BENCHMARK = "benchmark"
+    CLEANUP = "cleanup"
 
-        if "timeouts" in config.keys():
-            if query_type.value in config["timeouts"].keys():
-                return config["timeouts"][query_type.value]
+def retrieve_timeout_string(default_timeouts, config, query_type):
+    DEFAULT_QUERY_TIMEOUT = default_timeouts[query_type.value]
 
-        return DEFAULT_QUERY_TIMEOUT
+    # check if a dataset specific timeout has been specified
+    if "query_timeouts" in config.keys():
+        if query_type.value in config["query_timeouts"].keys():
+            return config["query_timeouts"][query_type.value]
 
+    return DEFAULT_QUERY_TIMEOUT
+
+def benchmark_dataset(dataset, config, timeouts, url = "http://localhost:19004/query/service", http_connection_timeout_sec = 9.2):
     def get_query(query_type):
         filename = "data/statements/" + dataset + "/" + str([q for q in QueryType].index(query_type) + 1) + "." + query_type.value + ".sqlpp"
         return read_file_content(filename)
@@ -107,51 +105,69 @@ def benchmark_dataset(dataset, config, url = "http://localhost:19002/query/servi
                 print("    error code:    {error_code}".format(error_code = err["code"]))
                 print("    error message: {error_msg}".format(error_msg = err["msg"]))
 
+    def print_connection_timeout():
+        print("could not connect to server within {conn_timeout}s".format(conn_timeout = http_connection_timeout_sec))
+
     results = {}
 
     preparation_query = get_query(QueryType.PREPARATION).format(host = "localhost", path = os.path.abspath("data/datasets/" + dataset + "/" + dataset + ".json"))
     print_query_run(QueryType.PREPARATION)
-    res = run_query(preparation_query, url)
-    res_json = res.json()
-    if query_was_successful(res_json):
-        print_success(res_json)
-    else:
-        print_failure(res_json)
+    try:
+        res = run_query(preparation_query, url, {"timeout": timeouts[QueryType.PREPARATION.value]}, http_connection_timeout_sec)
+        res_json = res.json()
+        if query_was_successful(res_json):
+            print_success(res_json)
+        else:
+            print_failure(res_json)
+            # TODO: "handle" this (exception?)
+    except requests.ConnectTimeout:
+        print_connection_timeout()
         # TODO: "handle" this (exception?)
-    #print(json.dumps(res_json, indent = 4, ensure_ascii = False))
 
     benchmark_query_unformatted = get_query(QueryType.BENCHMARK)
     for threshold in config["thresholds"]:
         benchmark_query_formatted = benchmark_query_unformatted.format(threshold = threshold)
         print_query_run(QueryType.BENCHMARK, threshold)
-        res = run_query(benchmark_query_formatted, url)
-        res_json = res.json()
-        if query_was_successful(res_json):
-            print_success(res_json)
-            results = dict(**results, **{str(threshold): retrieve_execution_time_from_json_in_ns(res_json)})
-        else:
-            print_failure(res_json)
+        try:
+            res = run_query(benchmark_query_formatted, url, {"timeout": timeouts[QueryType.BENCHMARK.value]}, http_connection_timeout_sec)
+            res_json = res.json()
+            if query_was_successful(res_json):
+                print_success(res_json)
+                results = dict(**results, **{str(threshold): retrieve_execution_time_from_json_in_ns(res_json)})
+            else:
+                print_failure(res_json)
+        except requests.ConnectTimeout:
+            print_connection_timeout()
+
         #print(json.dumps(res_json, indent = 4, ensure_ascii = False))
 
     cleanup_query = get_query(QueryType.CLEANUP)
     print_query_run(QueryType.CLEANUP)
-    res = run_query(cleanup_query, url)
-    res_json = res.json()
-    if query_was_successful(res_json):
-        print_success(res_json)
-    else:
-        # don't need to handle this since it's not really critical
-        print_failure(res_json)
+    try:
+        res = run_query(cleanup_query, url, {"timeout": timeouts[QueryType.CLEANUP.value]}, http_connection_timeout_sec)
+        res_json = res.json()
+        if query_was_successful(res_json):
+            print_success(res_json)
+        else:
+            # don't need to handle this since it's not really critical
+            print_failure(res_json)
+    except requests.ConnectTimeout:
+        print_connection_timeout()
 
     return results
 
 config = read_file_content("config.json", True)
+url = config["url"]
+http_connection_timeout_sec = config["http_connection_timeout_sec"]
+default_timeouts = config["query_timeouts"]
 
 for ds in config["datasets"]:
     if ds["enabled"]:
         dataset_name = ds["dataset"]
+        dataset_config = ds["config"]
+        dataset_timeouts = {k.value: retrieve_timeout_string(default_timeouts, dataset_config, k) for k in QueryType}
 
-        results = benchmark_dataset(dataset_name, ds["config"])
+        results = benchmark_dataset(dataset_name, ds["config"], dataset_timeouts, url, http_connection_timeout_sec)
 
         results_filename = "data/runtimes/" + dataset_name + "/" + get_current_time_iso(False) + ".txt"
         os.makedirs(os.path.dirname(results_filename), exist_ok = True)

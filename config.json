@@ -1,4 +1,12 @@
 {
+    "url": "http://localhost:19004/query/service",
+    "http_connection_timeout_sec": 9.2,
+    "query_timeouts": {
+        "preparation": "60s",
+        "benchmark": "60s",
+        "cleanup": "60s"
+    },
+
     "_comment": "If a specific dataset should not be benchmarked, set the value of its 'enabled' field to false.",
     "datasets": [
         {
