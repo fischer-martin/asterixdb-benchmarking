@@ -82,6 +82,9 @@ def retrieve_timeout_string(default_timeouts, config, query_type):
 
     return DEFAULT_QUERY_TIMEOUT
 
+class PreparationException(Exception):
+    pass
+
 def benchmark_run(run, dataset, config, timeouts, url = "http://localhost:19004/query/service", http_connection_timeout_sec = 9.2):
     def get_query(query_type):
         filename = "data/statements/" + run + "/" + str([q for q in QueryType].index(query_type) + 1) + "." + query_type.value + ".sqlpp"
@@ -118,10 +121,10 @@ def benchmark_run(run, dataset, config, timeouts, url = "http://localhost:19004/
                 print_success(res_json)
             else:
                 print_failure(res_json)
-                # TODO: "handle" this (exception?)
+                raise PreparationException()
         except requests.ConnectTimeout:
             print_connection_timeout()
-            # TODO: "handle" this (exception?)
+            raise PreparationException()
 
     def run_benchmark_query(unformatted_query, threshold, timeout):
         nonlocal results
@@ -176,7 +179,11 @@ for run_name, run_v in config["runs"].items():
         run_config = run_v["config"]
         run_timeouts = {k.value: retrieve_timeout_string(default_timeouts, run_config, k) for k in QueryType}
 
-        results = benchmark_run(run_name, dataset_name, run_config, run_timeouts, url, http_connection_timeout_sec)
+        try:
+            results = benchmark_run(run_name, dataset_name, run_config, run_timeouts, url, http_connection_timeout_sec)
+        except PreparationException:
+            print("[{timestamp}] could not run preparation query. aborting run {run}.".format(timestamp = get_current_time_iso(), run = run_name))
+            continue
 
         results_filename = "data/runtimes/" + run_name + "/" + get_current_time_iso(False) + ".txt"
         os.makedirs(os.path.dirname(results_filename), exist_ok = True)
