@@ -75,20 +75,20 @@ class QueryType(enum.Enum):
 def retrieve_timeout_string(default_timeouts, config, query_type):
     DEFAULT_QUERY_TIMEOUT = default_timeouts[query_type.value]
 
-    # check if a dataset specific timeout has been specified
+    # check if a run-specific timeout has been specified
     if "query_timeouts" in config.keys():
         if query_type.value in config["query_timeouts"].keys():
             return config["query_timeouts"][query_type.value]
 
     return DEFAULT_QUERY_TIMEOUT
 
-def benchmark_dataset(dataset, config, timeouts, url = "http://localhost:19004/query/service", http_connection_timeout_sec = 9.2):
+def benchmark_run(run, dataset, config, timeouts, url = "http://localhost:19004/query/service", http_connection_timeout_sec = 9.2):
     def get_query(query_type):
-        filename = "data/statements/" + dataset + "/" + str([q for q in QueryType].index(query_type) + 1) + "." + query_type.value + ".sqlpp"
+        filename = "data/statements/" + run + "/" + str([q for q in QueryType].index(query_type) + 1) + "." + query_type.value + ".sqlpp"
         return read_file_content(filename)
 
     def print_query_run(query_type, threshold = None):
-        output = "[{timestamp}] running {query_type} query of dataset {dataset}".format(timestamp = get_current_time_iso(), query_type = query_type.value, dataset = dataset)
+        output = "[{timestamp}] running {query_type} query of run {run}".format(timestamp = get_current_time_iso(), query_type = query_type.value, run = run)
         if (query_type == QueryType.BENCHMARK):
             output = output + " with threshold " + str(threshold)
         output = output + "... "
@@ -170,15 +170,15 @@ url = config["url"]
 http_connection_timeout_sec = config["http_connection_timeout_sec"]
 default_timeouts = config["query_timeouts"]
 
-for ds in config["datasets"]:
-    if ds["enabled"]:
-        dataset_name = ds["dataset"]
-        dataset_config = ds["config"]
-        dataset_timeouts = {k.value: retrieve_timeout_string(default_timeouts, dataset_config, k) for k in QueryType}
+for run_name, run_v in config["runs"].items():
+    if run_v["enabled"]:
+        dataset_name = run_v["dataset"]
+        run_config = run_v["config"]
+        run_timeouts = {k.value: retrieve_timeout_string(default_timeouts, run_config, k) for k in QueryType}
 
-        results = benchmark_dataset(dataset_name, ds["config"], dataset_timeouts, url, http_connection_timeout_sec)
+        results = benchmark_run(run_name, dataset_name, run_config, run_timeouts, url, http_connection_timeout_sec)
 
-        results_filename = "data/runtimes/" + dataset_name + "/" + get_current_time_iso(False) + ".txt"
+        results_filename = "data/runtimes/" + run_name + "/" + get_current_time_iso(False) + ".txt"
         os.makedirs(os.path.dirname(results_filename), exist_ok = True)
         with open(results_filename, "w") as results_file:
             for key, value in results.items():

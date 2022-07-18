@@ -7,21 +7,20 @@
         "cleanup": "60s"
     },
 
-    "_comment": "If a specific dataset should not be benchmarked, set the value of its 'enabled' field to false.",
-    "datasets": [
-        {
+    "runs": {
+        "smsen_native": {
             "dataset": "smsen",
             "enabled": false,
             "config": {
                 "thresholds": [
-                        7,
-                        17,
-                        22,
-                        27
+                    7,
+                    17,
+                    22,
+                    27
                 ]
             }
         },
-        {
+        "reddit_native": {
             "dataset": "reddit",
             "enabled": true,
             "config": {
@@ -33,7 +32,7 @@
                 ]
             }
         },
-        {
+        "fenf_native": {
             "dataset": "fenf",
             "enabled": false,
             "config": {
@@ -45,5 +44,5 @@
                 ]
             }
         }
-    ]
+    }
 }
