@@ -123,7 +123,9 @@ def benchmark_dataset(dataset, config, timeouts, url = "http://localhost:19004/q
             print_connection_timeout()
             # TODO: "handle" this (exception?)
 
-    def run_benchmark_query(unformatted_query, threshold, results, timeout):
+    def run_benchmark_query(unformatted_query, threshold, timeout):
+        nonlocal results
+
         benchmark_query_formatted = unformatted_query.format(threshold = threshold)
         print_query_run(QueryType.BENCHMARK, threshold)
         try:
@@ -157,7 +159,7 @@ def benchmark_dataset(dataset, config, timeouts, url = "http://localhost:19004/q
 
     benchmark_query_unformatted = get_query(QueryType.BENCHMARK)
     for threshold in config["thresholds"]:
-        run_benchmark_query(benchmark_query_unformatted, threshold, results, timeouts[QueryType.BENCHMARK.value])
+        run_benchmark_query(benchmark_query_unformatted, threshold, timeouts[QueryType.BENCHMARK.value])
 
     run_cleanup_query(timeouts[QueryType.CLEANUP.value])
 
