@@ -86,9 +86,17 @@ class PreparationException(Exception):
     pass
 
 def benchmark_run(run, dataset, config, timeouts, url = "http://localhost:19004/query/service", http_connection_timeout_sec = 9.2):
+    def print_file_not_found(query_type, file):
+        print("[{timestamp}] could not find {query_type} query file '{file}'".format(timestamp = get_current_time_iso(), query_type = query_type.value,file = file))
+
     def get_query(query_type):
         filename = "data/statements/" + run + "/" + str([q for q in QueryType].index(query_type) + 1) + "." + query_type.value + ".sqlpp"
-        return read_file_content(filename)
+        try:
+            file_content = read_file_content(filename)
+            return file_content
+        except FileNotFoundError:
+            print_file_not_found(query_type, filename)
+            raise FileNotFoundError
 
     def print_query_run(query_type, threshold = None):
         output = "[{timestamp}] running {query_type} query of run {run}".format(timestamp = get_current_time_iso(), query_type = query_type.value, run = run)
@@ -112,7 +120,11 @@ def benchmark_run(run, dataset, config, timeouts, url = "http://localhost:19004/
         print("could not connect to server within {conn_timeout}s".format(conn_timeout = http_connection_timeout_sec))
 
     def run_preparation_query(timeout):
-        preparation_query = get_query(QueryType.PREPARATION).format(host = "localhost", path = os.path.abspath("data/datasets/" + dataset + "/" + dataset + ".json"))
+        try:
+            preparation_query = get_query(QueryType.PREPARATION).format(host = "localhost", path = os.path.abspath("data/datasets/" + dataset + "/" + dataset + ".json"))
+        except FileNotFoundError:
+            raise PreparationException
+
         print_query_run(QueryType.PREPARATION)
         try:
             res = run_query(preparation_query, url, {"timeout": timeout}, http_connection_timeout_sec)
@@ -143,7 +155,12 @@ def benchmark_run(run, dataset, config, timeouts, url = "http://localhost:19004/
             print_connection_timeout()
 
     def run_cleanup_query(timeout):
-        cleanup_query = get_query(QueryType.CLEANUP)
+        try:
+            cleanup_query = get_query(QueryType.CLEANUP)
+        except FileNotFoundError:
+            # don't need to handle this since it's not really critical
+            return
+
         print_query_run(QueryType.CLEANUP)
         try:
             res = run_query(cleanup_query, url, {"timeout": timeout}, http_connection_timeout_sec)
@@ -160,9 +177,12 @@ def benchmark_run(run, dataset, config, timeouts, url = "http://localhost:19004/
 
     run_preparation_query(timeouts[QueryType.PREPARATION.value])
 
-    benchmark_query_unformatted = get_query(QueryType.BENCHMARK)
-    for threshold in config["thresholds"]:
-        run_benchmark_query(benchmark_query_unformatted, threshold, timeouts[QueryType.BENCHMARK.value])
+    try:
+        benchmark_query_unformatted = get_query(QueryType.BENCHMARK)
+        for threshold in config["thresholds"]:
+            run_benchmark_query(benchmark_query_unformatted, threshold, timeouts[QueryType.BENCHMARK.value])
+    except FileNotFoundError:
+        pass
 
     run_cleanup_query(timeouts[QueryType.CLEANUP.value])
 
@@ -185,8 +205,9 @@ for run_name, run_v in config["runs"].items():
             print("[{timestamp}] could not run preparation query. aborting run {run}.".format(timestamp = get_current_time_iso(), run = run_name))
             continue
 
-        results_filename = "data/runtimes/" + run_name + "/" + get_current_time_iso(False) + ".txt"
-        os.makedirs(os.path.dirname(results_filename), exist_ok = True)
-        with open(results_filename, "w") as results_file:
-            for key, value in results.items():
-                results_file.write(str(key) + " " + str(value) + "\n")
+        if any(results):
+            results_filename = "data/runtimes/" + run_name + "/" + get_current_time_iso(False) + ".txt"
+            os.makedirs(os.path.dirname(results_filename), exist_ok = True)
+            with open(results_filename, "w") as results_file:
+                for key, value in results.items():
+                    results_file.write(str(key) + " " + str(value) + "\n")
