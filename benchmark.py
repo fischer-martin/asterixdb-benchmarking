@@ -97,7 +97,7 @@ class PreparationException(Exception):
 
 def benchmark_run(run, dataset, config, timeouts, connection_config):
     query_url = connection_config["url"] + ":" + connection_config["query_api_port"] + "/query/service"
-    library_url = connection_config["url"] + ":" + connection_config["library_api_port"] + "/" + connection_config["username"] + "/udf/" + config["dataverse"] + config["join_library"]
+    library_url = connection_config["url"] + ":" + connection_config["library_api_port"] + "/" + connection_config["username"] + "/udf/" + config["dataverse"] + "/" + config["join_library"]
     http_connection_timeout_sec = connection_config["http_connection_timeout_sec"]
 
     def log_file_not_found(query_type, file):
