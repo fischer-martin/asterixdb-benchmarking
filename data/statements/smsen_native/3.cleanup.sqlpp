@@ -1,1 +1,1 @@
-DROP DATAVERSE SMSen;
+DROP DATAVERSE {dataverse};

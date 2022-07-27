@@ -6,6 +6,7 @@ import re
 import os
 import enum
 import datetime
+import argparse
 
 
 
@@ -91,9 +92,14 @@ def retrieve_timeout_string(default_timeouts, config, query_type):
     return DEFAULT_QUERY_TIMEOUT
 
 class PreparationException(Exception):
-    pass
+    def __init__(self, message):
+        super().__init__(message)
 
-def benchmark_run(run, dataset, config, timeouts, url = "http://localhost:19004/query/service", http_connection_timeout_sec = 9.2):
+def benchmark_run(run, dataset, config, timeouts, connection_config):
+    query_url = connection_config["url"] + ":" + connection_config["query_api_port"] + "/query/service"
+    library_url = connection_config["url"] + ":" + connection_config["library_api_port"] + "/" + connection_config["username"] + "/udf/" + config["dataverse"] + config["join_library"]
+    http_connection_timeout_sec = connection_config["http_connection_timeout_sec"]
+
     def log_file_not_found(query_type, file):
         log("could not find {query_type} query file '{file}'".format(query_type = query_type.value, file = file))
 
@@ -130,22 +136,33 @@ def benchmark_run(run, dataset, config, timeouts, url = "http://localhost:19004/
 
     def run_preparation_query(timeout):
         try:
-            preparation_query = get_query(QueryType.PREPARATION).format(host = "localhost", path = os.path.abspath("data/datasets/" + dataset + "/" + dataset + ".json"))
+            preparation_query = get_query(QueryType.PREPARATION).format(host = "localhost", dataverse = config["dataverse"], path = os.path.abspath("data/datasets/" + dataset + "/" + dataset + ".json"))
         except FileNotFoundError:
-            raise PreparationException
+            raise PreparationException("could not find preparation query file")
 
         log_query_run(QueryType.PREPARATION)
         try:
-            res = run_query(preparation_query, url, {"timeout": timeout}, http_connection_timeout_sec)
+            res = run_query(preparation_query, query_url, {"timeout": timeout}, http_connection_timeout_sec)
             res_json = res.json()
             if query_was_successful(res_json):
                 log_success(res_json)
             else:
-                raise PreparationException()
                 log_failure(res_json)
+                raise PreparationException("could not run preparation query")
         except requests.ConnectTimeout:
-            raise PreparationException()
             log_connection_timeout()
+            raise PreparationException("could not run preparation query")
+
+    def upload_join_library():
+        join_library = config["join_library"]
+        filename = "lib/" + join_library
+        timeout = (http_connection_timeout_sec, None)
+        try:
+            with open(filename, "rb") as lib_file:
+                # has to have the behaviour of curl -v -u username:password -X POST -F 'data=@filename' -F 'type=java' library_url
+                requests.post(library_url, auth = (connection_config["username"], connection_config["password"]), files = {"data": lib_file, "type": "java"}, timeout = timeout)
+        except Exception:
+            raise PreparationException("could not upload join library")
 
     def run_benchmark_query(unformatted_query, threshold, timeout):
         nonlocal results
@@ -153,7 +170,7 @@ def benchmark_run(run, dataset, config, timeouts, url = "http://localhost:19004/
         benchmark_query_formatted = unformatted_query.format(threshold = threshold)
         log_query_run(QueryType.BENCHMARK, threshold)
         try:
-            res = run_query(benchmark_query_formatted, url, {"timeout": timeout}, http_connection_timeout_sec)
+            res = run_query(benchmark_query_formatted, query_url, {"timeout": timeout}, http_connection_timeout_sec)
             res_json = res.json()
             if query_was_successful(res_json):
                 log_success(res_json)
@@ -172,7 +189,7 @@ def benchmark_run(run, dataset, config, timeouts, url = "http://localhost:19004/
 
         log_query_run(QueryType.CLEANUP).format(dataverse = config["dataverse"])
         try:
-            res = run_query(cleanup_query, url, {"timeout": timeout}, http_connection_timeout_sec)
+            res = run_query(cleanup_query, query_url, {"timeout": timeout}, http_connection_timeout_sec)
             res_json = res.json()
             if query_was_successful(res_json):
                 log_success(res_json)
@@ -186,8 +203,11 @@ def benchmark_run(run, dataset, config, timeouts, url = "http://localhost:19004/
 
     run_preparation_query(timeouts[QueryType.PREPARATION.value])
 
+    if "join_library" in config.keys():
+        upload_join_library()
+
     try:
-        benchmark_query_unformatted = get_query(QueryType.BENCHMARK)
+        benchmark_query_unformatted = get_query(QueryType.BENCHMARK).format(dataverse = config["dataverse"])
         for threshold in config["thresholds"]:
             run_benchmark_query(benchmark_query_unformatted, threshold, timeouts[QueryType.BENCHMARK.value])
     except FileNotFoundError:
@@ -197,9 +217,17 @@ def benchmark_run(run, dataset, config, timeouts, url = "http://localhost:19004/
 
     return results
 
+
+argparser = argparse.ArgumentParser()
+argparser.add_argument("-u", "--username", help = "database username")
+argparser.add_argument("-p", "--pasword", help = "database password")
+args = argparser.parse_args()
+if args.username and args.password:
+    credentials = {"username": args.username, "password": args.password}
+else:
+    credentials = {}
+
 config = read_file_content("config.json", True)
-url = config["url"]
-http_connection_timeout_sec = config["http_connection_timeout_sec"]
 default_timeouts = config["query_timeouts"]
 
 for run_name, run_v in config["runs"].items():
@@ -209,8 +237,8 @@ for run_name, run_v in config["runs"].items():
         run_timeouts = {k.value: retrieve_timeout_string(default_timeouts, run_config, k) for k in QueryType}
 
         try:
-            results = benchmark_run(run_name, dataset_name, run_config, run_timeouts, url, http_connection_timeout_sec)
-        except PreparationException:
+            results = benchmark_run(run_name, dataset_name, run_config, run_timeouts, dict(**config["connection_config"], **credentials))
+        except PreparationException as exc:
             log("{message}. aborting run {run}.".format(message = getattr(exc, "message"), run = run_name))
             continue
 

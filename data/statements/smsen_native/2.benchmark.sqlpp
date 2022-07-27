@@ -1,4 +1,4 @@
-USE SMSen;
+USE {dataverse};
 
 SELECT sms1.auto_id AS d1, sms2.auto_id AS d2, jedi(sms1, sms2) AS dist
     FROM SMSen sms1, SMSen sms2

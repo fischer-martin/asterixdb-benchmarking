@@ -1,6 +1,10 @@
 {
-    "url": "http://localhost:19004/query/service",
-    "http_connection_timeout_sec": 9.2,
+    "connection_config": {
+        "url": "http://localhost",
+        "query_api_port": 19004,
+        "library_api_port": 19005,
+        "http_connection_timeout_sec": 9.2
+    },
     "query_timeouts": {
         "preparation": "60s",
         "benchmark": "60s",
@@ -12,6 +16,7 @@
             "dataset": "smsen",
             "enabled": false,
             "config": {
+                "dataverse": "SMSenNative",
                 "thresholds": [
                     7,
                     17,
@@ -24,6 +29,7 @@
             "dataset": "reddit",
             "enabled": true,
             "config": {
+                "dataverse": "RedditNative",
                 "thresholds": [
                     15,
                     25,
@@ -36,6 +42,7 @@
             "dataset": "fenf",
             "enabled": false,
             "config": {
+                "dataverse": "FENFNative",
                 "thresholds": [
                     4,
                     7,

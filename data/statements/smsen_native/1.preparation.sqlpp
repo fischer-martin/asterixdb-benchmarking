@@ -1,6 +1,6 @@
-DROP DATAVERSE SMSen IF EXISTS;
-CREATE DATAVERSE SMSen;
-USE SMSen;
+DROP DATAVERSE {dataverse} IF EXISTS;
+CREATE DATAVERSE {dataverse};
+USE {dataverse};
 
 -- We have to autogenerate an id as a primary key since the "@id" field in the dataset isn't unique
 CREATE TYPE SMSenType AS {{

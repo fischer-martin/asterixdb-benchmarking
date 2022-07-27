@@ -1,6 +1,6 @@
-DROP DATAVERSE Reddit IF EXISTS;
-CREATE DATAVERSE Reddit;
-USE Reddit;
+DROP DATAVERSE {dataverse} IF EXISTS;
+CREATE DATAVERSE {dataverse};
+USE {dataverse};
 
 CREATE TYPE RedditType AS {{
     auto_id: uuid

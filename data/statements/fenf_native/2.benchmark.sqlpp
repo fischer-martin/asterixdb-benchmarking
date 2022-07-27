@@ -1,4 +1,4 @@
-USE FENF;
+USE {dataverse};
 
 SELECT fenf1.auto_id AS d1, fenf2.auto_id AS d2, jedi(fenf1, fenf2) AS dist
     FROM FENF fenf1, FENF fenf2

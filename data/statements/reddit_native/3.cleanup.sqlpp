@@ -1,1 +1,1 @@
-DROP DATAVERSE Reddit;
+DROP DATAVERSE {dataverse};

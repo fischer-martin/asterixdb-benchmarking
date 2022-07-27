@@ -1,4 +1,4 @@
-USE Reddit;
+USE {dataverse};
 
 SELECT thread1.auto_id AS d1, thread2.auto_id AS d2, jedi(thread1, thread2) AS dist
     FROM Reddit thread1, Reddit thread2
