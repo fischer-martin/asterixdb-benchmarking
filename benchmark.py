@@ -236,7 +236,7 @@ for run_name, run_v in config["runs"].items():
         run_timeouts = {k.value: retrieve_timeout_string(default_timeouts, run_config, k) for k in QueryType}
 
         try:
-            results = benchmark_run(run_name, run_config, run_timeouts, dict(**config["connection_config"], **credentials))
+            results = benchmark_run(run_name, run_config, run_timeouts, dict(config["connection_config"]).update(credentials))
         except PreparationException as exc:
             log("{message}. aborting run {run}.".format(message = getattr(exc, "message"), run = run_name))
             continue
