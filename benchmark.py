@@ -18,6 +18,9 @@ def log(msg, newline = True, append = False):
 
     print(output, end = (None if newline else ""), flush = True)
 
+def get_directory():
+    return os.path.dirname(os.path.realpath(__file__))
+
 # the DB turns a nano time long into a string and we parse the string back into nano time.
 # nice
 def parse_time_string(time_string):
@@ -60,7 +63,7 @@ def run_query(query, url = "http://localhost:19004/query/service", parameters = 
     return requests.post(url, dict(**{"statement": query}, **parameters), timeout = timeout)
 
 def read_file_content(filename, is_json = False):
-    with open(filename, "r") as file:
+    with open(get_directory()  + "/" + filename, "r") as file:
         if is_json:
             file_content = json.load(file)
         else:
@@ -93,11 +96,11 @@ def retrieve_timeout_string(default_timeouts, config, query_type):
 
 class PreparationException(Exception):
     def __init__(self, message):
+        self.message = message
         super().__init__(message)
 
 def benchmark_run(run, config, timeouts, connection_config):
-    query_url = connection_config["url"] + ":" + connection_config["query_api_port"] + "/query/service"
-    library_url = connection_config["url"] + ":" + connection_config["library_api_port"] + "/" + connection_config["username"] + "/udf/" + config["dataverse"] + "/" + config["join_library"]
+    query_url = connection_config["url"] + ":" + str(connection_config["query_api_port"]) + "/query/service"
     http_connection_timeout_sec = connection_config["http_connection_timeout_sec"]
 
     def log_file_not_found(query_type, file):
@@ -136,7 +139,7 @@ def benchmark_run(run, config, timeouts, connection_config):
 
     def run_preparation_query(timeout):
         try:
-            preparation_query = get_query(QueryType.PREPARATION).format(host = "localhost", dataverse = config["dataverse"], path_prefix = os.path.dirname(os.path.realpath(__file__)) + "/data/datasets/")
+            preparation_query = get_query(QueryType.PREPARATION).format(host = "localhost", dataverse = config["dataverse"], path_prefix = get_directory() + "/data/datasets/")
         except FileNotFoundError:
             raise PreparationException("could not find preparation query file")
 
@@ -154,8 +157,12 @@ def benchmark_run(run, config, timeouts, connection_config):
             raise PreparationException("could not run preparation query")
 
     def upload_join_library():
+        if not ("username" in connection_config.keys() and "password" in connection_config.keys()):
+            raise PreparationException("can not upload join library without DB credentials")
+
+        library_url = connection_config["url"] + ":" + str(connection_config["library_api_port"]) + "/" + connection_config["username"] + "/udf/" + config["dataverse"] + "/" + config["join_library"]
         join_library = config["join_library"]
-        filename = "lib/" + join_library
+        filename = get_directory() + "/lib/" + join_library
         timeout = (http_connection_timeout_sec, None)
         try:
             with open(filename, "rb") as lib_file:
@@ -167,7 +174,7 @@ def benchmark_run(run, config, timeouts, connection_config):
     def run_benchmark_query(unformatted_query, threshold, timeout):
         nonlocal results
 
-        benchmark_query_formatted = unformatted_query.format(threshold = threshold)
+        benchmark_query_formatted = unformatted_query.format(dataverse = config["dataverse"], threshold = threshold)
         log_query_run(QueryType.BENCHMARK, threshold)
         try:
             res = run_query(benchmark_query_formatted, query_url, {"timeout": timeout}, http_connection_timeout_sec)
@@ -182,12 +189,12 @@ def benchmark_run(run, config, timeouts, connection_config):
 
     def run_cleanup_query(timeout):
         try:
-            cleanup_query = get_query(QueryType.CLEANUP)
+            cleanup_query = get_query(QueryType.CLEANUP).format(dataverse = config["dataverse"])
         except FileNotFoundError:
             # don't need to handle this since it's not really critical
             return
 
-        log_query_run(QueryType.CLEANUP).format(dataverse = config["dataverse"])
+        log_query_run(QueryType.CLEANUP)
         try:
             res = run_query(cleanup_query, query_url, {"timeout": timeout}, http_connection_timeout_sec)
             res_json = res.json()
@@ -207,7 +214,7 @@ def benchmark_run(run, config, timeouts, connection_config):
         upload_join_library()
 
     try:
-        benchmark_query_unformatted = get_query(QueryType.BENCHMARK).format(dataverse = config["dataverse"])
+        benchmark_query_unformatted = get_query(QueryType.BENCHMARK)
         for threshold in config["thresholds"]:
             run_benchmark_query(benchmark_query_unformatted, threshold, timeouts[QueryType.BENCHMARK.value])
     except FileNotFoundError:
@@ -220,7 +227,7 @@ def benchmark_run(run, config, timeouts, connection_config):
 
 argparser = argparse.ArgumentParser()
 argparser.add_argument("-u", "--username", help = "database username")
-argparser.add_argument("-p", "--pasword", help = "database password")
+argparser.add_argument("-p", "--password", help = "database password")
 args = argparser.parse_args()
 if args.username and args.password:
     credentials = {"username": args.username, "password": args.password}
@@ -234,15 +241,17 @@ for run_name, run_v in config["runs"].items():
     if run_v["enabled"]:
         run_config = run_v["config"]
         run_timeouts = {k.value: retrieve_timeout_string(default_timeouts, run_config, k) for k in QueryType}
+        connection_config = dict(config["connection_config"]) # let's make a copy since we don't want to modify the original data
+        connection_config.update(credentials) # credentials as args should have higher priority than the ones in the config
 
         try:
-            results = benchmark_run(run_name, run_config, run_timeouts, dict(config["connection_config"]).update(credentials))
+            results = benchmark_run(run_name, run_config, run_timeouts, connection_config)
         except PreparationException as exc:
             log("{message}. aborting run {run}.".format(message = getattr(exc, "message"), run = run_name))
             continue
 
         if any(results):
-            results_filename = os.path.dirname(os.path.realpath(__file__)) + "/data/runtimes/" + run_name + "/" + get_current_time_iso(False) + ".txt"
+            results_filename = get_directory() + "/data/runtimes/" + run_name + "/" + get_current_time_iso(False) + ".txt"
             os.makedirs(os.path.dirname(results_filename), exist_ok = True)
             with open(results_filename, "w") as results_file:
                 for key, value in results.items():
