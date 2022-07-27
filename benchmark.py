@@ -242,7 +242,7 @@ for run_name, run_v in config["runs"].items():
             continue
 
         if any(results):
-            results_filename = "data/runtimes/" + run_name + "/" + get_current_time_iso(False) + ".txt"
+            results_filename = os.path.dirname(os.path.realpath(__file__)) + "/data/runtimes/" + run_name + "/" + get_current_time_iso(False) + ".txt"
             os.makedirs(os.path.dirname(results_filename), exist_ok = True)
             with open(results_filename, "w") as results_file:
                 for key, value in results.items():
