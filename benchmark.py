@@ -95,7 +95,7 @@ class PreparationException(Exception):
     def __init__(self, message):
         super().__init__(message)
 
-def benchmark_run(run, dataset, config, timeouts, connection_config):
+def benchmark_run(run, config, timeouts, connection_config):
     query_url = connection_config["url"] + ":" + connection_config["query_api_port"] + "/query/service"
     library_url = connection_config["url"] + ":" + connection_config["library_api_port"] + "/" + connection_config["username"] + "/udf/" + config["dataverse"] + "/" + config["join_library"]
     http_connection_timeout_sec = connection_config["http_connection_timeout_sec"]
@@ -136,7 +136,7 @@ def benchmark_run(run, dataset, config, timeouts, connection_config):
 
     def run_preparation_query(timeout):
         try:
-            preparation_query = get_query(QueryType.PREPARATION).format(host = "localhost", dataverse = config["dataverse"], path = os.path.abspath("data/datasets/" + dataset + "/" + dataset + ".json"))
+            preparation_query = get_query(QueryType.PREPARATION).format(host = "localhost", dataverse = config["dataverse"], path_prefix = os.path.dirname(os.path.realpath(__file__)) + "/data/datasets/")
         except FileNotFoundError:
             raise PreparationException("could not find preparation query file")
 
@@ -232,12 +232,11 @@ default_timeouts = config["query_timeouts"]
 
 for run_name, run_v in config["runs"].items():
     if run_v["enabled"]:
-        dataset_name = run_v["dataset"]
         run_config = run_v["config"]
         run_timeouts = {k.value: retrieve_timeout_string(default_timeouts, run_config, k) for k in QueryType}
 
         try:
-            results = benchmark_run(run_name, dataset_name, run_config, run_timeouts, dict(**config["connection_config"], **credentials))
+            results = benchmark_run(run_name, run_config, run_timeouts, dict(**config["connection_config"], **credentials))
         except PreparationException as exc:
             log("{message}. aborting run {run}.".format(message = getattr(exc, "message"), run = run_name))
             continue
