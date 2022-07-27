@@ -9,6 +9,14 @@ import datetime
 
 
 
+def log(msg, newline = True, append = False):
+    if append:
+        output = str(msg)
+    else:
+        output = "[{timestamp}] {msg}".format(timestamp = get_current_time_iso(), msg = msg)
+
+    print(output, end = (None if newline else ""), flush = True)
+
 # the DB turns a nano time long into a string and we parse the string back into nano time.
 # nice
 def parse_time_string(time_string):
@@ -86,8 +94,8 @@ class PreparationException(Exception):
     pass
 
 def benchmark_run(run, dataset, config, timeouts, url = "http://localhost:19004/query/service", http_connection_timeout_sec = 9.2):
-    def print_file_not_found(query_type, file):
-        print("[{timestamp}] could not find {query_type} query file '{file}'".format(timestamp = get_current_time_iso(), query_type = query_type.value,file = file))
+    def log_file_not_found(query_type, file):
+        log("could not find {query_type} query file '{file}'".format(query_type = query_type.value, file = file))
 
     def get_query(query_type):
         filename = "data/statements/" + run + "/" + str([q for q in QueryType].index(query_type) + 1) + "." + query_type.value + ".sqlpp"
@@ -95,29 +103,30 @@ def benchmark_run(run, dataset, config, timeouts, url = "http://localhost:19004/
             file_content = read_file_content(filename)
             return file_content
         except FileNotFoundError:
-            print_file_not_found(query_type, filename)
+            log_file_not_found(query_type, filename)
             raise FileNotFoundError
 
-    def print_query_run(query_type, threshold = None):
-        output = "[{timestamp}] running {query_type} query of run {run}".format(timestamp = get_current_time_iso(), query_type = query_type.value, run = run)
+    def log_query_run(query_type, threshold = None):
+        output = "running {query_type} query of run {run}".format(query_type = query_type.value, run = run)
         if (query_type == QueryType.BENCHMARK):
             output = output + " with threshold " + str(threshold)
         output = output + "... "
-        print(output, end = "", flush = True)
+        log(output, newline = False)
 
-    def print_success(json_data):
-        print("done [{time}]".format(time = retrieve_execution_time_from_json(json_data)))
+    def log_success(json_data):
+        log("done [{time}]".format(time = retrieve_execution_time_from_json(json_data)), append = True)
 
-    def print_failure(json_data):
-        print("failed (status: {query_status}) [{time}]".format(query_status = retrieve_query_status(json_data), time = retrieve_execution_time_from_json(json_data)))
+    def log_failure(json_data):
+        log("failed (status: {query_status}) [{time}]".format(query_status = retrieve_query_status(json_data), time = retrieve_execution_time_from_json(json_data)), newline = False, append = True)
         if "errors" in json_data.keys():
             errors = json_data["errors"]
             for err in errors:
-                print("    error code:    {error_code}".format(error_code = err["code"]))
-                print("    error message: {error_msg}".format(error_msg = err["msg"]))
+                log("\n    error code:    {error_code}".format(error_code = err["code"]), newline = False, append = True)
+                log("\n    error message: {error_msg}".format(error_msg = err["msg"]), newline = False, append = True)
+        log("", append = True)
 
-    def print_connection_timeout():
-        print("could not connect to server within {conn_timeout}s".format(conn_timeout = http_connection_timeout_sec))
+    def log_connection_timeout():
+        log("could not connect to server within {conn_timeout}s".format(conn_timeout = http_connection_timeout_sec), append = True)
 
     def run_preparation_query(timeout):
         try:
@@ -125,34 +134,34 @@ def benchmark_run(run, dataset, config, timeouts, url = "http://localhost:19004/
         except FileNotFoundError:
             raise PreparationException
 
-        print_query_run(QueryType.PREPARATION)
+        log_query_run(QueryType.PREPARATION)
         try:
             res = run_query(preparation_query, url, {"timeout": timeout}, http_connection_timeout_sec)
             res_json = res.json()
             if query_was_successful(res_json):
-                print_success(res_json)
+                log_success(res_json)
             else:
-                print_failure(res_json)
                 raise PreparationException()
+                log_failure(res_json)
         except requests.ConnectTimeout:
-            print_connection_timeout()
             raise PreparationException()
+            log_connection_timeout()
 
     def run_benchmark_query(unformatted_query, threshold, timeout):
         nonlocal results
 
         benchmark_query_formatted = unformatted_query.format(threshold = threshold)
-        print_query_run(QueryType.BENCHMARK, threshold)
+        log_query_run(QueryType.BENCHMARK, threshold)
         try:
             res = run_query(benchmark_query_formatted, url, {"timeout": timeout}, http_connection_timeout_sec)
             res_json = res.json()
             if query_was_successful(res_json):
-                print_success(res_json)
+                log_success(res_json)
                 results = dict(**results, **{str(threshold): retrieve_execution_time_from_json_in_ns(res_json)})
             else:
-                print_failure(res_json)
+                log_failure(res_json)
         except requests.ConnectTimeout:
-            print_connection_timeout()
+            log_connection_timeout()
 
     def run_cleanup_query(timeout):
         try:
@@ -161,17 +170,17 @@ def benchmark_run(run, dataset, config, timeouts, url = "http://localhost:19004/
             # don't need to handle this since it's not really critical
             return
 
-        print_query_run(QueryType.CLEANUP)
+        log_query_run(QueryType.CLEANUP).format(dataverse = config["dataverse"])
         try:
             res = run_query(cleanup_query, url, {"timeout": timeout}, http_connection_timeout_sec)
             res_json = res.json()
             if query_was_successful(res_json):
-                print_success(res_json)
+                log_success(res_json)
             else:
                 # don't need to handle this since it's not really critical
-                print_failure(res_json)
+                log_failure(res_json)
         except requests.ConnectTimeout:
-            print_connection_timeout()
+            log_connection_timeout()
 
     results = {}
 
@@ -202,7 +211,7 @@ for run_name, run_v in config["runs"].items():
         try:
             results = benchmark_run(run_name, dataset_name, run_config, run_timeouts, url, http_connection_timeout_sec)
         except PreparationException:
-            print("[{timestamp}] could not run preparation query. aborting run {run}.".format(timestamp = get_current_time_iso(), run = run_name))
+            log("{message}. aborting run {run}.".format(message = getattr(exc, "message"), run = run_name))
             continue
 
         if any(results):
