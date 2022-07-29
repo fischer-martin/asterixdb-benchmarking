@@ -239,6 +239,9 @@ argparser = argparse.ArgumentParser()
 argparser.add_argument("-u", "--username", help = "database username")
 argparser.add_argument("-p", "--password", help = "database password")
 args = argparser.parse_args()
+if (args.username and not args.password) or (not args.username and args.password):
+    argparser.error("can't only specify either username or password")
+
 if args.username and args.password:
     credentials = {"username": args.username, "password": args.password}
 else:
