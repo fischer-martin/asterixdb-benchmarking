@@ -135,7 +135,10 @@ def benchmark_run(run, config, timeouts, connection_config):
         log("", append = True)
 
     def log_connection_timeout():
-        log("could not connect to server within {conn_timeout}s".format(conn_timeout = http_connection_timeout_sec), append = True)
+        log("connection request timed out after {conn_timeout}s".format(conn_timeout = http_connection_timeout_sec), append = True)
+
+    def log_connection_error():
+        log("could not reach server".format(conn_timeout = http_connection_timeout_sec), append = True)
 
     def run_preparation_query(timeout):
         try:
@@ -154,6 +157,9 @@ def benchmark_run(run, config, timeouts, connection_config):
                 raise PreparationException("could not run preparation query")
         except requests.ConnectTimeout:
             log_connection_timeout()
+            raise PreparationException("could not run preparation query")
+        except requests.ConnectionError:
+            log_connection_error()
             raise PreparationException("could not run preparation query")
 
     def upload_join_library():
@@ -186,6 +192,8 @@ def benchmark_run(run, config, timeouts, connection_config):
                 log_failure(res_json)
         except requests.ConnectTimeout:
             log_connection_timeout()
+        except requests.ConnectionError:
+            log_connection_error()
 
     def run_cleanup_query(timeout):
         try:
@@ -205,6 +213,8 @@ def benchmark_run(run, config, timeouts, connection_config):
                 log_failure(res_json)
         except requests.ConnectTimeout:
             log_connection_timeout()
+        except requests.ConnectionError:
+            log_connection_error()
 
     results = {}
 
